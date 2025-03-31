@@ -13,6 +13,13 @@ PageRank_iterations2(int N, int* row_ptr, int* col_idx, double* val, double d, d
 		BIF(X[0] = (double*)malloc(N*sizeof(double)), "allocate X0");
 		BIF(X[1] = (double*)malloc(N*sizeof(double)), "allocate X1");
 		BIF(dangling = (u32*)calloc(N, sizeof(u32)), "allocate dangling");
+
+		double W = (double)danglingSize/N;
+		double C = (double)(1-d)/N;
+		u8 last = 0;
+		u8 cur = 1;
+		u32 danglingSize = 0;
+		double stopCrit = 0;
 	
 		#pragma omp parallel
 		{
@@ -24,51 +31,59 @@ PageRank_iterations2(int N, int* row_ptr, int* col_idx, double* val, double d, d
 			#pragma omp for
 			for(u32 i = 0; i < N; ++i) X[0][i] = 1.0/N;
 			
-	
+			u32 num_t = omp_get_num_threads();	
 			u32 t_num = omp_get_thread_num();
 			u32 t_index = N*t_num;
 			#pragma omp for
-			for(u32 i = 0; i < row_ptr[N]; ++i) ++dangling[t_index + col_idx[i]];
+			for(u32 i = 0; i < row_ptr[N]; ++i) ++t_dangling[t_index + col_idx[i]];
 
-			
-			u32 danglingSize = 0;
-			for(u32 i = 0; i < N; ++i)
+			#pragma omp for
+			for(u32 i = 0; i < N; ++i) for(u32 j = 0; j < num_t; ++j) danling[i] += t_dangling[N*t_num+i];
+
+			#pragma omp single
 			{
-				if(!dangling[i])
+				for(u32 i = 0; i < N; ++i)
 				{
-					dangling[danglingSize] = i;
-					++danglingSize;
+					if(!dangling[i])
+					{
+						dangling[danglingSize] = i;
+						++danglingSize;
+					}
 				}
 			}
 
-			double W = (double)danglingSize/N;
-			double C = (double)(1-d)/N;
-
-			u8 last = 0;
-			u8 cur = 1;
 			while(1)
 			{
+				#pragma omp for schedule(guided)
 				for(u32 i = 0; i < N; ++i)
 				{
 					X[cur][i] = 0;
 					for(u32 j = 0; j < row_ptr[i+1]-row_ptr[i]; ++j) X[cur][i] += val[row_ptr[i] + j] * X[last][col_idx[row_ptr[i] + j]];
 					X[cur][i] = d*(X[cur][i] + W/N) + C;
 				}
+				
 
 				double W_new = 0;
+				#pragma omp for reduction(+:W)
 				for(u32 i = 0; i < danglingSize; ++i) W_new += X[cur][dangling[i]];
 
-				double stopCrit = 0;
-				for(u32 i = 0; i < N; ++i) if(X[cur][i] - X[last][i] > stopCrit) stopCrit = X[cur][i] - X[last][i];
-				if(stopCrit < epsilon) break;
-				else
+				double stopCrit_new = 0;
+				#pragma omp for reduction(max:stopCrit)
+				for(u32 i = 0; i < N; ++i) if(X[cur][i] - X[last][i] > stopCrit) stopCrit_new = X[cur][i] - X[last][i];
+				
+				#pragma omp single
 				{
-					last ^= cur;
-					cur ^= last;
-					last ^= cur;
+					if(stopCrit < epsilon) break;
+					else
+					{
+						last ^= cur;
+						cur ^= last;
+						last ^= cur;
+					}
 				}
 			}
-	
+			
+			#pragma omp for
 			for(u32 i = 0; i < N; ++i) scores[i] = X[cur][i];
 		}
 
@@ -77,6 +92,7 @@ PageRank_iterations2(int N, int* row_ptr, int* col_idx, double* val, double d, d
 		free(X[0]);
 		free(X[1]);
 		free(dangling);
+		free(t_dangling);
 		return;
 
 	} while(0);
