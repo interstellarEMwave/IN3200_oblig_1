@@ -1,5 +1,6 @@
 #include "function_declarations.h"
 
+
 void 
 PageRank_iterations1(int N, double** hyperlink_matrix, double d, double epsilon, double* scores)
 {
@@ -21,12 +22,14 @@ PageRank_iterations1(int N, double** hyperlink_matrix, double d, double epsilon,
 		{
 			if(!dangling[i])
 			{
+				printf("%d ", i);
 				dangling[danglingSize] = i;
 				++danglingSize;
 			}
 		}
+		printf("\n");
 
-		double W = (double)danglingSize/N;
+		double W = (double)danglingSize/(N*N);
 		double C = (double)(1-d)/N;
 
 		u8 last = 0;
@@ -37,14 +40,18 @@ PageRank_iterations1(int N, double** hyperlink_matrix, double d, double epsilon,
 			{
 				X[cur][i] = 0;
 				for(u32 j = 0; j < N; ++j) X[cur][i] += hyperlink_matrix[i][j] * X[last][j];
-				X[cur][i] = d*(X[cur][i] + W/N) + C;
+				X[cur][i] = d*(X[cur][i] + W) + C;
 			}
 	
 			double W_new = 0;
 			for(u32 i = 0; i < danglingSize; ++i) W_new += X[cur][dangling[i]];
+			W = W_new/N;
 
 			double stopCrit = 0;
-			for(u32 i = 0; i < N; ++i) if(X[cur][i] - X[last][i] > stopCrit) stopCrit = X[cur][i] - X[last][i];
+			for(u32 i = 0; i < N; ++i) 
+			{
+				if(fabs(X[cur][i]-X[last][i]) > stopCrit) stopCrit = fabs(X[cur][i]-X[last][i]);
+			}
 			if(stopCrit < epsilon) break;
 			else
 			{
